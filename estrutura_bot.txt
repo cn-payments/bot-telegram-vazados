@@ -1,0 +1,69 @@
+# Estrutura Geral do Bot Telegram VIP
+
+## 1. Arquitetura Geral
+- Bot em Python usando python-telegram-bot
+- Integração com banco de dados MySQL (tabelas: users, subscriptions, payments, vip_plans, vip_groups, bot_config, bot_messages)
+- Handlers organizados por comandos, callbacks e mensagens
+- Suporte a pagamentos (MercadoPago, PIX automático/manual, CNPay)
+- Painel administrativo completo via Telegram
+
+## 2. Funções Principais
+- **start**: Comando inicial, mostra status VIP, planos disponíveis, envia arquivo de boas-vindas
+- **vip**: Mostra informações e planos VIP
+- **admin**: Painel admin com estatísticas, configurações, usuários VIP, planos, mensagens, manutenção, broadcast
+- **handle_plan_selection**: Seleção de planos VIP
+- **handle_payment_method**: Escolha do método de pagamento
+- **register_vip_subscription / renew_vip_subscription**: Registro e renovação de assinaturas VIP
+- **handle_admin_callback**: Fluxo principal do painel admin (menus, navegação, ações)
+- **handle_admin_edit**: Edição de mensagens/configs do bot pelo admin
+- **handle_admin_text**: Recebe textos do admin para edição de mensagens/configs
+- **handle_admin_files**: Recebe arquivos de boas-vindas
+- **check_expired_subscriptions / check_expiring_subscriptions**: Jobs para gerenciar assinaturas expiradas
+
+## 3. Handlers e Fluxos
+- **Comandos**: /start, /vip, /admin, /test_users
+- **CallbackQueryHandlers**: Para navegação de menus, edição, seleção de planos, métodos de pagamento, manutenção, etc
+- **MessageHandlers**: Para textos e arquivos enviados pelo admin
+
+## 4. Banco de Dados
+- **users**: Usuários do bot
+- **subscriptions**: Assinaturas VIP
+- **payments**: Pagamentos realizados
+- **vip_plans**: Planos VIP disponíveis
+- **vip_groups**: Grupos VIP vinculados
+- **bot_config**: Configurações gerais do bot
+- **bot_messages**: Mensagens customizáveis do bot
+
+## 5. Fluxo Administrativo
+- Menu admin com navegação por botões
+- Edição de mensagens do bot (boas-vindas, pagamento, sucesso, erro, instruções PIX)
+- Gerenciamento de planos, grupos, configurações, modo manutenção
+- Broadcast para todos os usuários
+
+## 6. Pagamentos
+- Integração com MercadoPago, PIX automático/manual, CNPay
+- Geração de QR Code, verificação de status, registro de pagamentos
+- Atualização automática de status VIP após pagamento aprovado
+
+## 7. Mensagens Customizáveis
+- Mensagens do bot salvas na tabela bot_messages
+- Admin pode editar mensagens pelo painel
+- Mensagens exibidas para o usuário sempre são buscadas do banco
+
+## 8. Gerenciamento de Grupos
+- Associação de planos a grupos VIP
+- Adição/remoção automática de usuários em grupos conforme status VIP
+
+## 9. Configuração
+- Configurações salvas em bot_config (token, admin_id, métodos de pagamento, modo manutenção, etc)
+- Carregadas via função load_config()
+
+## 10. Jobs e Tarefas Periódicas
+- Verificação de assinaturas expiradas e próximas de expirar
+- Fila de entrega de acesso VIP
+- Inicialização de webhooks e jobs no main()
+
+---
+
+**Resumo:**
+O bot é modular, seguro, com painel admin completo, integração total com banco, pagamentos e grupos, e permite personalização total das mensagens e fluxos pelo Telegram. 
