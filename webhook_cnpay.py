@@ -1094,7 +1094,7 @@ async def deliver_vip_access(bot, user_id, plan_id, groups, plan_info):
                             chat_id=user_id,
                             text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                  f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                 f"💎 VIP DA EDUARDA 🍑🔥\n\n"
+                                 f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
                                  f"📝 O link expira em {plan_info['duration_days']} dias (duração do seu plano).\n\n"
                                  f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                  f"**Link:** {invite_link.invite_link}"
@@ -1110,7 +1110,7 @@ async def deliver_vip_access(bot, user_id, plan_id, groups, plan_info):
                                 chat_id=user_id,
                                 text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                      f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                     f"💎 VIP DA EDUARDA 🍑🔥\n\n"
+                                     f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
                                      f"📝 O link expira em {plan_info['duration_days']} dias (duração do seu plano).\n\n"
                                      f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                      f"**Link:** {invite_link}"

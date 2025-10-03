@@ -1194,7 +1194,7 @@ async def add_user_to_vip_groups(bot, user_id, plan_id):
                             chat_id=user_id,
                             text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                  f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                 f"💎 VIP DA EDUARDA 🍑🔥\n\n"
+                                 f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
                                  f"📝 O link expira em {plan['duration_days']} dias (duração do seu plano).\n\n"
                                  f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                  f"**Link:** {invite_link.invite_link}"
@@ -1210,7 +1210,7 @@ async def add_user_to_vip_groups(bot, user_id, plan_id):
                                 chat_id=user_id,
                                 text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                      f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                     f"💎 VIP DA EDUARDA 🍑🔥\n\n"
+                                     f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
                                      f"📝 O link expira em {plan['duration_days']} dias (duração do seu plano).\n\n"
                                      f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                      f"**Link:** {invite_link}"
@@ -6747,7 +6747,7 @@ async def get_user_vip_links(bot, user_id):
             # Gerar links de convite para cada grupo
             links_message = f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
             links_message += f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-            links_message += f"💎 VIP DA EDUARDA 🍑🔥\n\n"
+            links_message += f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
             links_message += f"📅 **Expira em:** {end_date.strftime('%d/%m/%Y %H:%M')}\n\n"
             links_message += f"📱 **Grupos VIP:**\n\n"
             
