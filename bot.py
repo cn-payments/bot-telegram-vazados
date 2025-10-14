@@ -946,7 +946,9 @@ async def check_payment_async(payment_id, provider=None):
             logger.info(f"Pagamento verificado com sucesso")
             return result
         else:
-            logger.error(f"Falha ao verificar pagamento {payment_id}")
+            # Não logar falha para PushinPay pois 404 é normal
+            if provider != 'pushinpay':
+                logger.error(f"Falha ao verificar pagamento {payment_id}")
             return None
             
     except Exception as e:
@@ -1194,7 +1196,7 @@ async def add_user_to_vip_groups(bot, user_id, plan_id):
                             chat_id=user_id,
                             text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                  f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                 f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
+                                 f"💎 VIP DA EDUARDA 🍑🔥\n\n"
                                  f"📝 O link expira em {plan['duration_days']} dias (duração do seu plano).\n\n"
                                  f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                  f"**Link:** {invite_link.invite_link}"
@@ -1210,7 +1212,7 @@ async def add_user_to_vip_groups(bot, user_id, plan_id):
                                 chat_id=user_id,
                                 text=f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
                                      f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-                                     f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
+                                     f"💎 VIP DA EDUARDA 🍑🔥\n\n"
                                      f"📝 O link expira em {plan['duration_days']} dias (duração do seu plano).\n\n"
                                      f"⚠ Este link é único e só pode ser usado uma vez.\n\n"
                                      f"**Link:** {invite_link}"
@@ -1264,23 +1266,93 @@ def generate_mercadopago_pix(amount, description, external_reference):
     logger.warning("generate_mercadopago_pix está depreciada. Use generate_pix_automatico()")
     return None
 
+def generate_qr_code_local(pix_code):
+    """Gera QR code localmente em bytes"""
+    try:
+        import qrcode
+        from PIL import Image
+        import io
+        
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(pix_code)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        return img_buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Falha ao gerar QR code local: {e}")
+        return None
+
 # Nova função unificada para gerar PIX automático
 async def generate_pix_automatico(amount, description, external_reference):
     logger.info(f"[DEBUG] generate_pix_automatico chamado: amount={amount}, description={description}, external_reference={external_reference}")
     """Gera PIX usando o sistema de provedores com fallback"""
     try:
+        # Carregar configuração para verificar provedor ativo
+        config = load_config()
+        if not config:
+            logger.error("❌ Não foi possível carregar configuração")
+            return None
+        
+        # Usar o provedor PIX configurado no bot_config
+        selected_gateway = config.get('pix_provider', 'cnpay')
+        logger.info(f"🔄 Usando provedor configurado: {selected_gateway}")
+        
+        # Verificar se o provedor configurado está habilitado
+        provider_enabled = False
+        if selected_gateway == 'cnpay':
+            provider_enabled = config.get('cnpay_enabled', False)
+        elif selected_gateway == 'pushinpay':
+            provider_enabled = config.get('pushinpay_enabled', False)
+        elif selected_gateway == 'mercadopago':
+            provider_enabled = config.get('mercadopago_enabled', False)
+        
+        # Se o provedor configurado não estiver habilitado, usar fallback
+        if not provider_enabled:
+            logger.warning(f"⚠️ Provedor {selected_gateway} não está habilitado, usando fallback...")
+            # Tentar CNPay primeiro, depois PushinPay, depois MercadoPago
+            if config.get('cnpay_enabled', False):
+                selected_gateway = 'cnpay'
+                provider_enabled = True
+                logger.info("🔄 Fallback para CNPay")
+            elif config.get('pushinpay_enabled', False):
+                selected_gateway = 'pushinpay'
+                provider_enabled = True
+                logger.info("🔄 Fallback para PushinPay")
+            elif config.get('mercadopago_enabled', False):
+                selected_gateway = 'mercadopago'
+                provider_enabled = True
+                logger.info("🔄 Fallback para MercadoPago")
+            else:
+                logger.error("❌ Nenhum provedor PIX habilitado!")
+                return None
+        
+        # Obter gerenciador de provedores
         provider_manager = get_pix_provider_manager()
-        result = await provider_manager.generate_pix_with_fallback(amount, description, external_reference)
+        available_providers = provider_manager.get_available_providers()
+        
+        if not available_providers:
+            logger.error("❌ Nenhum provedor PIX disponível")
+            return None
+        
+        # Gerar PIX usando o gateway selecionado
+        if selected_gateway in available_providers:
+            result = await provider_manager.generate_pix_with_provider(selected_gateway, amount, description, external_reference)
+        else:
+            logger.warning(f"⚠️ Gateway {selected_gateway} não disponível, usando fallback...")
+            result = await provider_manager.generate_pix_with_fallback(amount, description, external_reference)
         
         if result:
-            logger.info(f"PIX gerado com sucesso usando provedor: {result['provider']}")
+            logger.info(f"✅ PIX gerado com sucesso usando provedor: {result['provider']}")
             return result
         else:
-            logger.error("Falha ao gerar PIX com todos os provedores")
+            logger.error("❌ Falha ao gerar PIX com todos os provedores")
             return None
             
     except Exception as e:
-        logger.error(f"Erro ao gerar PIX automático: {e}")
+        logger.error(f"❌ Erro ao gerar PIX automático: {e}")
         return None
 
 # Gerar QR Code PIX
@@ -1715,8 +1787,20 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
         if pix_data:
             # Converter QR Code base64 para imagem
             import base64
-            qr_code_bytes = base64.b64decode(pix_data['qr_code_base64'])
-            qr_code = io.BytesIO(qr_code_bytes)
+            try:
+                qr_code_bytes = base64.b64decode(pix_data['qr_code_base64'])
+                qr_code = io.BytesIO(qr_code_bytes)
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao decodificar QR Code base64: {e}")
+                # Usar QR Code gerado localmente como fallback
+                if pix_data.get('qr_code'):
+                    try:
+                        qr_code_fallback = generate_qr_code_local(pix_data['qr_code'])
+                        qr_code = io.BytesIO(qr_code_fallback)
+                    except Exception as fallback_error:
+                        logger.error(f"❌ Erro no fallback do QR Code: {fallback_error}")
+                        await query.message.reply_text("❌ Erro ao gerar QR Code. Tente novamente.")
+                        return
             
             # Criar botões "Já Paguei" e "Copiar Código PIX"
             keyboard = [
@@ -1822,6 +1906,11 @@ async def check_payment_auto(context: ContextTypes.DEFAULT_TYPE):
         provider = data.get('provider', 'mercadopago')
         
         logger.info(f"🔍 Verificando pagamento {payment_id} (provedor: {provider})")
+        
+        # Para PushinPay, não verificar - usar apenas webhook
+        if provider == 'pushinpay':
+            logger.info(f"✅ Pagamento PushinPay {payment_id} - aguardando webhook (não verificação manual)")
+            return
         
         # Para CNPay, verificar se o pagamento já foi processado via webhook
         if provider == 'cnpay':
@@ -2585,7 +2674,19 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             
             # Converter base64 para bytes
             import base64
-            qr_image_bytes = base64.b64decode(pix_result['qr_code_base64'])
+            try:
+                qr_image_bytes = base64.b64decode(pix_result['qr_code_base64'])
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao decodificar QR Code base64: {e}")
+                # Usar QR Code gerado localmente como fallback
+                if pix_result.get('qr_code'):
+                    qr_image_bytes = generate_qr_code_local(pix_result['qr_code'])
+                    if not qr_image_bytes:
+                        await query.message.reply_text("❌ Erro ao gerar QR Code. Tente novamente.")
+                        return
+                else:
+                    await query.message.reply_text("❌ Erro ao gerar QR Code. Tente novamente.")
+                    return
             
             await query.message.reply_photo(
                 photo=qr_image_bytes,
@@ -2953,32 +3054,58 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Menu de configuração de provedores PIX
         provider_manager = get_pix_provider_manager()
         available_providers = provider_manager.get_available_providers()
-        default_provider = config.get('pix_provider', 'mercadopago')
+        default_provider = 'cnpay'
         
         # Status dos provedores
         mercadopago_enabled = config.get('mercadopago_enabled', False)
         cnpay_enabled = config.get('cnpay_enabled', False)
         
         keyboard = [
-            [InlineKeyboardButton(
-                f"{'🟢' if cnpay_enabled else '🔴'} CNPay",
-                callback_data="admin_toggle_cnpay"
-            )],
             [InlineKeyboardButton("🔧 Configurar CNPay", callback_data="admin_config_cnpay")],
-            [InlineKeyboardButton("🎯 Definir Provedor Padrão", callback_data="admin_set_default_provider")],
-            [InlineKeyboardButton("🧪 Testar Conexões", callback_data="admin_test_providers")],
+            [InlineKeyboardButton("🧪 Testar Conexão CNPay", callback_data="admin_test_cnpay")],
             [InlineKeyboardButton("⬅️ Voltar", callback_data="admin_settings")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        status_text = "🔧 CONFIGURAÇÃO DE PROVEDORES PIX\n\n"
-        status_text += f"📱 Provedores Disponíveis:\n"
-        status_text += f"   🏦 CNPay: {'✅ Ativo' if cnpay_enabled else '❌ Inativo'}\n\n"
-        status_text += f"🎯 Provedor Padrão: {default_provider.title()}\n"
-        status_text += f"📊 Provedores Configurados: {len(available_providers)}\n\n"
+        status_text = "🔧 CONFIGURAÇÃO CNPay\n\n"
+        status_text += f"🏦 CNPay: {'✅ Ativo' if cnpay_enabled else '❌ Inativo'}\n\n"
         status_text += "Escolha uma opção:"
         
         await query.message.edit_text(status_text, reply_markup=reply_markup)
+        return
+    
+    elif query.data == "admin_test_cnpay":
+        # Testar conexão CNPay
+        try:
+            provider_manager = get_pix_provider_manager()
+            cnpay_provider = provider_manager.providers.get('cnpay')
+            
+            if cnpay_provider:
+                # Teste simples de configuração
+                config = load_config()
+                cnpay_enabled = config.get('cnpay_enabled', False)
+                
+                if cnpay_enabled:
+                    test_result = "✅ CNPay configurado e ativo"
+                else:
+                    test_result = "❌ CNPay não está ativo"
+            else:
+                test_result = "❌ CNPay não encontrado"
+            
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="admin_pix_providers")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.message.edit_text(
+                f"🧪 TESTE CNPay\n\n{test_result}",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="admin_pix_providers")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.edit_text(
+                f"🧪 TESTE CNPay\n\n❌ Erro: {str(e)}",
+                reply_markup=reply_markup
+            )
         return
     
     elif query.data == "admin_toggle_cnpay":
@@ -2998,7 +3125,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             # Recarregar menu
             provider_manager = get_pix_provider_manager()
             available_providers = provider_manager.get_available_providers()
-            default_provider = config.get('pix_provider', 'mercadopago')
+            default_provider = 'cnpay'
             cnpay_enabled = config.get('cnpay_enabled', False)
             
             keyboard = [
@@ -3013,10 +3140,26 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
+            # Verificar status de todos os provedores
+            mercadopago_enabled = config.get('mercadopago_enabled', False)
+            pushinpay_enabled = config.get('pushinpay_enabled', False)
+            
             status_text = "🔧 CONFIGURAÇÃO DE PROVEDORES PIX\n\n"
             status_text += f"📱 Provedores Disponíveis:\n"
-            status_text += f"   🏦 CNPay: {'✅ Ativo' if cnpay_enabled else '❌ Inativo'}\n\n"
-            status_text += f"🎯 Provedor Padrão: {default_provider.title()}\n"
+            status_text += f"   🏦 CNPay: {'✅ Ativo' if cnpay_enabled else '❌ Inativo'}\n"
+            status_text += f"   💳 MercadoPago: {'✅ Ativo' if mercadopago_enabled else '❌ Inativo'}\n"
+            status_text += f"   🚀 PushinPay: {'✅ Ativo' if pushinpay_enabled else '❌ Inativo'}\n\n"
+            
+            # Destacar o provedor ativo
+            active_provider = "Nenhum"
+            if default_provider == 'cnpay' and cnpay_enabled:
+                active_provider = "🏦 CNPay"
+            elif default_provider == 'mercadopago' and mercadopago_enabled:
+                active_provider = "💳 MercadoPago"
+            elif default_provider == 'pushinpay' and pushinpay_enabled:
+                active_provider = "🚀 PushinPay"
+            
+            status_text += f"🎯 Provedor Ativo: {active_provider}\n"
             status_text += f"📊 Provedores Configurados: {len(available_providers)}\n\n"
             status_text += "Escolha uma opção:"
             
@@ -3072,7 +3215,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
     
     elif query.data == "admin_set_default_provider":
         # Definir provedor padrão
-        current_default = config.get('pix_provider', 'mercadopago')
+        current_default = 'cnpay'
         mercadopago_enabled = config.get('mercadopago_enabled', False)
         cnpay_enabled = config.get('cnpay_enabled', False)
         
@@ -5982,6 +6125,11 @@ def main():
         webhook_thread = threading.Thread(target=start_cnpay_webhook, daemon=True)
         webhook_thread.start()
         
+        # Iniciar o webhook da PushinPay em thread separada
+        logger.info("🚀 Iniciando webhook da PushinPay na porta 8091...")
+        pushinpay_webhook_thread = threading.Thread(target=start_pushinpay_webhook, daemon=True)
+        pushinpay_webhook_thread.start()
+        
         # Verificar conexão com o banco de dados
         logger.info("🔍 Verificando conexão com o banco de dados...")
         from db_config import DB_CONFIG
@@ -6443,11 +6591,14 @@ class CNPayProvider(PixProvider):
             
             # Webhook configuration
             webhook_url = self.config.get('cnpay_webhook_url', '')
+            logger.info(f"🔍 CNPay webhook URL configurada: {webhook_url}")
             if webhook_url:
                 if not webhook_url.startswith(('http://', 'https://')):
                     webhook_url = 'https://' + webhook_url
                 payment_data["callbackUrl"] = webhook_url
                 logger.info(f"🔔 Callback configurado: {webhook_url}")
+            else:
+                logger.warning("⚠️ CNPay webhook URL não configurada")
             
             # Headers and request
             headers = {
@@ -6562,6 +6713,18 @@ class CNPayProvider(PixProvider):
                             commit=True
                         )
                     logger.info(f"Pagamento registrado: {payment_info['transactionId']}")
+                    
+                    # Notificar admin sobre pagamento criado (QR code gerado)
+                    try:
+                        from webhook_cnpay import notify_admin_payment_created
+                        notify_admin_payment_created(
+                            payment_info['transactionId'],
+                            {'amount': amount, 'user_id': user_id, 'plan_id': plan_id},
+                            db,
+                            {'user_id': user_id, 'amount': amount, 'plan_id': plan_id}
+                        )
+                    except Exception as e:
+                        logger.error(f"⚠️ Erro ao notificar admin sobre pagamento criado: {str(e)}")
             except Exception as e:
                 logger.error(f"Erro ao registrar pagamento: {e}")
             finally:
@@ -6611,6 +6774,287 @@ class CNPayProvider(PixProvider):
         logger.warning("CNPay não suporta verificação manual de pagamentos. Use apenas webhooks.")
         return None
 
+class PushinPayProvider(PixProvider):
+    """Provedor PushinPay com suporte a PIX automático"""
+    
+    def __init__(self, config):
+        super().__init__(config)
+        self.api_key = config.get('pushinpay_api_key', '')
+        # PushinPay usa apenas API Key como Bearer token
+        self.environment = config.get('pushinpay_environment', 'sandbox')
+        
+        # Configurar URL baseada no ambiente
+        if self.environment == 'sandbox':
+            self.base_url = 'https://api.pushinpay.com.br/api/pix/cashIn'
+        else:
+            self.base_url = 'https://api.pushinpay.com.br/api/pix/cashIn'
+        
+        logger.info(f"🔧 PushinPay configurado - Ambiente: {self.environment}")
+        logger.info(f"🔧 URL: {self.base_url}")
+        logger.info(f"🔧 API Key configurada: {'✅' if self.api_key else '❌'}")
+    
+    async def generate_pix(self, amount, description, external_reference, splits=None):
+        """Gera PIX usando PushinPay API"""
+        try:
+            # Extrair user_id e plan_id do external_reference
+            if external_reference.startswith('admin_vip_'):
+                parts = external_reference.split('_')
+                user_id = parts[2]
+                plan_id = 'admin_vip'
+            else:
+                user_id, plan_id = external_reference.split('_')
+
+            # Buscar informações do usuário e plano
+            db = Database()
+            user_info = None
+            plan_info = None
+            try:
+                db.connect()
+                if db.connection:
+                    if plan_id == 'admin_vip':
+                        admin_query = "SELECT admin_id, user FROM admins WHERE admin_id = %s"
+                        user_info = db.execute_fetch_one(admin_query, (int(user_id),))
+                        plan_info = {
+                            'id': 'admin_vip',
+                            'name': 'Admin VIP',
+                            'price': amount,
+                            'duration_days': 30
+                        }
+                    else:
+                        user_query = "SELECT id, username, first_name, last_name FROM users WHERE id = %s"
+                        user_info = db.execute_fetch_one(user_query, (int(user_id),))
+                        plan_query = "SELECT id, name, price, duration_days FROM vip_plans WHERE id = %s"
+                        plan_info = db.execute_fetch_one(plan_query, (int(plan_id),))
+            except Exception as e:
+                logger.error(f"Erro ao buscar dados do usuário/plano: {e}")
+            finally:
+                db.close()
+
+            # Montagem da requisição
+            # IMPORTANTE: PushinPay requer valor em CENTAVOS
+            value_in_cents = int(float(amount) * 100)
+            
+            payment_data = {
+                "value": value_in_cents,  # Valor em centavos
+                "webhook_url": self.config.get('pushinpay_webhook_url', ''),
+                "split_rules": splits or []
+            }
+            
+            # Headers da requisição (corrigidos para PushinPay)
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {self.api_key}',  # API Key como Bearer token
+                'Accept': 'application/json'
+            }
+            
+            # Log da requisição
+            logger.info(f"📤 Enviando requisição para PushinPay:")
+            logger.info(f"   URL: {self.base_url}")
+            logger.info(f"   Headers: {dict(headers)}")
+            logger.info(f"   Payload: {json.dumps(payment_data, indent=2, ensure_ascii=False)}")
+            
+            # Validar credenciais antes de enviar
+            if not self.api_key:
+                logger.error("❌ API Key PushinPay não configurada")
+                logger.error(f"❌ API Key: {'✅' if self.api_key else '❌'}")
+                return None
+            
+            # Enviar requisição
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.base_url,
+                    json=payment_data,
+                    headers=headers,
+                    timeout=30,
+                    follow_redirects=False  # Não seguir redirecionamentos
+                )
+            
+            # Log da resposta
+            logger.info(f"📥 Resposta PushinPay - Status: {response.status_code}")
+            logger.info(f"📥 Headers: {dict(response.headers)}")
+            logger.info(f"📥 Conteúdo: {response.text[:500]}...")
+            
+            # Tratar redirecionamento 302
+            if response.status_code == 302:
+                logger.warning("⚠️ PushinPay retornou redirecionamento 302")
+                logger.warning("⚠️ Verifique se a URL da API está correta")
+                logger.warning("⚠️ Possível problema de autenticação ou URL incorreta")
+                return None
+            
+            if response.status_code in (200, 201):
+                try:
+                    payment_info = response.json()
+                    return self._process_success_response(payment_info, user_id, plan_id, amount, external_reference)
+                except Exception as e:
+                    logger.error(f"Erro ao processar JSON da resposta: {e}")
+                    return None
+            
+            # Tratamento de erro
+            try:
+                error_data = response.json() if response.text else {"error": "Resposta vazia"}
+            except:
+                error_data = {"error": f"Status {response.status_code}: {response.text[:200]}"}
+            
+            logger.error(f"❌ Erro PushinPay {response.status_code}: {error_data}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Falha ao gerar PIX PushinPay: {str(e)}", exc_info=True)
+            return None
+    
+    def _process_success_response(self, payment_info, user_id, plan_id, amount, external_reference):
+        """Processa resposta de sucesso da API"""
+        try:
+            # Registrar no banco de dados
+            db = Database()
+            try:
+                db.connect()
+                if db.connection:
+                    # Mapear status
+                    status_map = {
+                        'pending': 'pending',
+                        'paid': 'approved',
+                        'cancelled': 'cancelled',
+                        'refunded': 'refunded',
+                        'failed': 'rejected'
+                    }
+                    db_status = status_map.get(payment_info.get('status', 'pending'), 'pending')
+                    
+                    # Inserir pagamento
+                    if plan_id != 'admin_vip':
+                        db.execute_query(
+                            """INSERT INTO payments 
+                            (payment_id, user_id, plan_id, amount, currency, 
+                             payment_method, status, external_reference, 
+                             qr_code_data) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            (
+                                payment_info.get('id', ''),
+                                int(user_id),
+                                int(plan_id),
+                                amount,
+                                'BRL',
+                                'pix_automatico',
+                                db_status,
+                                external_reference,
+                                payment_info.get('qr_code', '')  # Campo correto da PushinPay
+                            ),
+                            commit=True
+                        )
+                    else:
+                        # Admin VIP
+                        db.execute_query(
+                            """INSERT INTO admin_vip_payments 
+                            (admin_id, amount, description, external_reference, 
+                             pix_code, status, expires_at) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                            (
+                                int(user_id),
+                                amount,
+                                'Admin VIP - Upgrade de Acesso',
+                                external_reference,
+                                payment_info.get('qr_code', ''),  # Campo correto da PushinPay
+                                'pending',
+                                datetime.now() + timedelta(hours=24)
+                            ),
+                            commit=True
+                        )
+                    
+                    logger.info(f"Pagamento PushinPay registrado: {payment_info.get('id', '')}")
+                    
+                    # Notificar admin sobre pagamento criado (QR code gerado)
+                    try:
+                        from webhook_pushinpay import notify_admin_payment_created
+                        notify_admin_payment_created(
+                            payment_info.get('id', ''),
+                            {'amount': amount, 'user_id': user_id, 'plan_id': plan_id},
+                            db,
+                            {'user_id': user_id, 'amount': amount, 'plan_id': plan_id}
+                        )
+                    except Exception as e:
+                        logger.error(f"⚠️ Erro ao notificar admin sobre pagamento criado: {str(e)}")
+            except Exception as e:
+                logger.error(f"Erro ao registrar pagamento PushinPay: {e}")
+            finally:
+                db.close()
+            
+            # Gerar QR code se necessário
+            qr_base64 = payment_info.get('qr_code_base64', '')
+            if not qr_base64 and payment_info.get('qr_code'):
+                try:
+                    qr_base64 = self._generate_qr_code(payment_info['qr_code'])
+                except Exception as e:
+                    logger.warning(f"⚠️ Erro ao gerar QR code local: {e}")
+                    qr_base64 = ""
+            
+            return {
+                "qr_code": payment_info.get('qr_code', ''),
+                "qr_code_base64": qr_base64,
+                "payment_id": payment_info.get('id', ''),
+                "provider": "pushinpay",
+                "status": db_status,
+                "pix_image_url": payment_info.get('qr_code_base64'),
+                "order_url": None  # PushinPay não retorna URL de pagamento
+            }
+            
+        except Exception as e:
+            logger.error(f"Erro ao processar resposta PushinPay: {e}")
+            return None
+    
+    def _generate_qr_code(self, pix_code):
+        """Gera QR code localmente em base64"""
+        try:
+            import qrcode
+            from PIL import Image
+            import io
+            import base64
+            
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(pix_code)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            img_buffer = io.BytesIO()
+            img.save(img_buffer, format='PNG')
+            return base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Falha ao gerar QR code: {e}")
+            return ""
+    
+    async def check_payment(self, payment_id):
+        """Verifica status do pagamento no PushinPay"""
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Accept': 'application/json'
+            }
+            
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"https://api.pushinpay.com.br/api/pix/status/{payment_id}",
+                    headers=headers,
+                    timeout=30
+                )
+            
+            if response.status_code == 200:
+                payment_info = response.json()
+                return {
+                    "payment_id": payment_id,
+                    "status": payment_info.get('status', 'pending'),
+                    "provider": "pushinpay"
+                }
+            else:
+                # Não logar erro 404 pois é normal quando pagamento não existe
+                if response.status_code != 404:
+                    logger.error(f"Erro ao verificar pagamento PushinPay: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erro ao verificar pagamento PushinPay {payment_id}: {e}")
+            return None
+
 class PixProviderManager:
     """Gerenciador de provedores PIX"""
     
@@ -6628,15 +7072,38 @@ class PixProviderManager:
         # CNPay
         if self.config.get('cnpay_enabled', False):
             self.providers['cnpay'] = CNPayProvider(self.config)
+        
+        # PushinPay
+        if self.config.get('pushinpay_enabled', False):
+            self.providers['pushinpay'] = PushinPayProvider(self.config)
     
     def get_default_provider(self):
         """Retorna o provedor padrão"""
-        default_provider = self.config.get('pix_provider', 'mercadopago')
+        default_provider = 'cnpay'
         return self.providers.get(default_provider)
     
     def get_available_providers(self):
         """Retorna lista de provedores disponíveis"""
         return list(self.providers.keys())
+    
+    async def generate_pix_with_provider(self, provider_name, amount, description, external_reference):
+        """Gera PIX usando um provedor específico"""
+        if provider_name not in self.providers:
+            logger.error(f"Provedor {provider_name} não disponível")
+            return None
+        
+        try:
+            provider = self.providers[provider_name]
+            result = await provider.generate_pix(amount, description, external_reference)
+            if result:
+                logger.info(f"PIX gerado com sucesso usando {provider_name}")
+                return result
+            else:
+                logger.error(f"Falha ao gerar PIX com {provider_name}")
+                return None
+        except Exception as e:
+            logger.error(f"Erro ao gerar PIX com {provider_name}: {e}")
+            return None
     
     async def generate_pix_with_fallback(self, amount, description, external_reference):
         """Gera PIX com fallback automático entre provedores"""
@@ -6657,7 +7124,7 @@ class PixProviderManager:
         
         # Se falhar, tentar outros provedores
         for provider_name, provider in self.providers.items():
-            if provider_name == self.config.get('pix_provider', 'mercadopago'):
+            if provider_name == 'cnpay':
                 continue  # Já tentou o padrão
             
             try:
@@ -6672,9 +7139,13 @@ class PixProviderManager:
         return None
     
     async def check_payment_with_fallback(self, payment_id, provider=None):
-        """Verifica pagamento com fallback - CNPay não suporta verificação manual"""
+        """Verifica pagamento com fallback - CNPay e PushinPay não suportam verificação manual"""
         if provider == 'cnpay':
             logger.info(f"Pagamento CNPay {payment_id} - aguardando webhook (não verificação manual)")
+            return None
+        
+        if provider == 'pushinpay':
+            logger.info(f"Pagamento PushinPay {payment_id} - aguardando webhook (não verificação manual)")
             return None
         
         if provider and provider in self.providers:
@@ -6685,8 +7156,8 @@ class PixProviderManager:
         
         # Tentar apenas provedores que suportam verificação manual
         for provider_name, provider_instance in self.providers.items():
-            # Pular CNPay pois só usa webhooks
-            if provider_name == 'cnpay':
+            # Pular CNPay e PushinPay pois só usam webhooks
+            if provider_name in ['cnpay', 'pushinpay']:
                 continue
                 
             try:
@@ -6701,6 +7172,7 @@ class PixProviderManager:
 # Instância global do gerenciador de provedores
 _pix_provider_manager = None
 
+
 def get_pix_provider_manager():
     """Retorna a instância global do gerenciador de provedores"""
     global _pix_provider_manager
@@ -6709,9 +7181,15 @@ def get_pix_provider_manager():
         _pix_provider_manager = PixProviderManager(config)
     return _pix_provider_manager
 
+
 def start_cnpay_webhook():
     from webhook_cnpay import app as webhook_app
-    webhook_app.run(host='0.0.0.0', port=8082, debug=False, use_reloader=False)
+    webhook_app.run(host='0.0.0.0', port=8090, debug=False, use_reloader=False)
+
+def start_pushinpay_webhook():
+    from webhook_pushinpay import app as webhook_app
+    logger.info("🚀 Webhook PushinPay iniciado na porta 8091")
+    webhook_app.run(host='0.0.0.0', port=8091, debug=False, use_reloader=False)
 
 async def get_user_vip_links(bot, user_id):
     """Busca links de convite VIP para um usuário com assinatura ativa"""
@@ -6747,7 +7225,7 @@ async def get_user_vip_links(bot, user_id):
             # Gerar links de convite para cada grupo
             links_message = f"⬇ ESTOU PELADINHA TE ESPERANDO 🙈\n\n"
             links_message += f"😈 Clique em \" VER CANAL \" pra gente começar a brincar 🔥\n\n"
-            links_message += f"💎 VIP VAZADOS VIP 🍑🔥\n\n"
+            links_message += f"💎 VIP DA EDUARDA 🍑🔥\n\n"
             links_message += f"📅 **Expira em:** {end_date.strftime('%d/%m/%Y %H:%M')}\n\n"
             links_message += f"📱 **Grupos VIP:**\n\n"
             
