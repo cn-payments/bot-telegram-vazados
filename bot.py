@@ -2137,46 +2137,75 @@ def generate_database_structure():
         cursor.execute("SHOW TABLES")
         tables = cursor.fetchall()
         
-        sql_backup = "-- Backup Completo do Banco de Dados\n"
+        sql_backup = "-- Backup Simples do Banco de Dados\n"
         sql_backup += "-- Gerado automaticamente em " + str(datetime.now()) + "\n"
-        sql_backup += "-- Inclui estrutura e dados de todas as tabelas\n\n"
+        sql_backup += "-- Versão simplificada sem dependências complexas\n\n"
+        sql_backup += "-- Configurações básicas\n"
         sql_backup += "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n"
-        sql_backup += "START TRANSACTION;\n"
-        sql_backup += "SET time_zone = \"+00:00\";\n"
-        sql_backup += "SET FOREIGN_KEY_CHECKS = 0;\n"
-        sql_backup += "SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n"
-        sql_backup += "SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, AUTOCOMMIT=0;\n"
-        sql_backup += "SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;\n"
-        sql_backup += "SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;\n\n"
+        sql_backup += "SET FOREIGN_KEY_CHECKS = 0;\n\n"
         
         for table in tables:
             table_name = table[0]
             
-            # Obter estrutura da tabela
+            # Obter estrutura da tabela de forma simplificada
             try:
-                cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
-                create_table = cursor.fetchone()
+                sql_backup += f"-- Tabela: {table_name}\n"
+                sql_backup += f"DROP TABLE IF EXISTS `{table_name}`;\n"
                 
-                if create_table:
-                    sql_backup += f"-- ============================================\n"
-                    sql_backup += f"-- Estrutura da tabela `{table_name}`\n"
-                    sql_backup += f"-- ============================================\n"
-                    sql_backup += f"DROP TABLE IF EXISTS `{table_name}`;\n"
+                # Obter estrutura básica da tabela
+                cursor.execute(f"DESCRIBE `{table_name}`")
+                columns = cursor.fetchall()
+                
+                if columns:
+                    # Construir CREATE TABLE básico
+                    sql_backup += f"CREATE TABLE `{table_name}` (\n"
                     
-                    # Limpar definidores problemáticos
-                    create_sql = create_table[1]
-                    # Remover definidores problemáticos
-                    create_sql = create_sql.replace("DEFINER=`root`@`%`", "DEFINER=CURRENT_USER")
-                    create_sql = create_sql.replace("DEFINER=`root`@`localhost`", "DEFINER=CURRENT_USER")
-                    create_sql = create_sql.replace("DEFINER=`root`@`127.0.0.1`", "DEFINER=CURRENT_USER")
+                    column_definitions = []
+                    primary_keys = []
                     
-                    sql_backup += create_sql + ";\n\n"
+                    for col in columns:
+                        col_name = col[0]
+                        col_type = col[1]
+                        col_null = "NOT NULL" if col[2] == "NO" else "NULL"
+                        col_key = col[3]
+                        col_default = col[4]
+                        col_extra = col[5]
+                        
+                        # Construir definição da coluna
+                        col_def = f"  `{col_name}` {col_type}"
+                        
+                        if col_null == "NOT NULL":
+                            col_def += " NOT NULL"
+                        
+                        if col_default and col_default != "NULL":
+                            if col_default.upper() in ["CURRENT_TIMESTAMP", "NOW()"]:
+                                col_def += f" DEFAULT {col_default}"
+                            else:
+                                col_def += f" DEFAULT '{col_default}'"
+                        
+                        if col_extra:
+                            col_def += f" {col_extra}"
+                        
+                        column_definitions.append(col_def)
+                        
+                        if col_key == "PRI":
+                            primary_keys.append(f"`{col_name}`")
+                    
+                    sql_backup += ",\n".join(column_definitions)
+                    
+                    if primary_keys:
+                        sql_backup += f",\n  PRIMARY KEY ({', '.join(primary_keys)})"
+                    
+                    sql_backup += "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n"
+                else:
+                    sql_backup += f"-- Erro: Não foi possível obter estrutura da tabela {table_name}\n\n"
+                    
             except Exception as e:
                 logger.warning(f"[DATABASE] Erro ao obter estrutura da tabela {table_name}: {e}")
                 sql_backup += f"-- Erro ao obter estrutura da tabela `{table_name}`: {e}\n\n"
                 continue
             
-            # Obter dados da tabela
+            # Obter dados da tabela de forma simplificada
             try:
                 cursor.execute(f"SELECT * FROM `{table_name}`")
                 rows = cursor.fetchall()
@@ -2187,12 +2216,10 @@ def generate_database_structure():
                     columns = cursor.fetchall()
                     column_names = [col[0] for col in columns]
                     
-                    sql_backup += f"-- Dados da tabela `{table_name}`\n"
-                    sql_backup += f"LOCK TABLES `{table_name}` WRITE;\n"
-                    sql_backup += f"/*!40000 ALTER TABLE `{table_name}` DISABLE KEYS */;\n"
+                    sql_backup += f"-- Dados da tabela {table_name}\n"
                     
                     for row in rows:
-                        # Construir INSERT statement
+                        # Construir INSERT statement simples
                         values = []
                         for value in row:
                             if value is None:
@@ -2211,20 +2238,16 @@ def generate_database_structure():
                         insert_sql = f"INSERT INTO `{table_name}` (`{'`, `'.join(column_names)}`) VALUES ({', '.join(values)});\n"
                         sql_backup += insert_sql
                     
-                    sql_backup += f"/*!40000 ALTER TABLE `{table_name}` ENABLE KEYS */;\n"
-                    sql_backup += f"UNLOCK TABLES;\n\n"
+                    sql_backup += "\n"
                 else:
-                    sql_backup += f"-- Tabela `{table_name}` está vazia\n\n"
+                    sql_backup += f"-- Tabela {table_name} está vazia\n\n"
             except Exception as e:
                 logger.warning(f"[DATABASE] Erro ao obter dados da tabela {table_name}: {e}")
-                sql_backup += f"-- Erro ao obter dados da tabela `{table_name}`: {e}\n\n"
+                sql_backup += f"-- Erro ao obter dados da tabela {table_name}: {e}\n\n"
         
+        sql_backup += "-- Restaurar configurações\n"
         sql_backup += "SET FOREIGN_KEY_CHECKS = 1;\n"
-        sql_backup += "SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;\n"
-        sql_backup += "SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;\n"
-        sql_backup += "SET SQL_MODE=@OLD_SQL_MODE;\n"
-        sql_backup += "SET AUTOCOMMIT=@OLD_AUTOCOMMIT;\n"
-        sql_backup += "COMMIT;\n"
+        sql_backup += "\n-- Backup concluído com sucesso!\n"
         
         cursor.close()
         return sql_backup
