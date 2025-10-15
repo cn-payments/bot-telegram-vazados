@@ -6681,11 +6681,11 @@ class CNPayProvider(PixProvider):
                 payment_data["callbackUrl"] = webhook_url
                 logger.info(f"🔔 Callback configurado: {webhook_url}")
             
-            # Headers and request
+            # Headers and request - limpar caracteres de controle
             headers = {
                 'Content-Type': 'application/json',
-                'x-public-key': self.api_key,
-                'x-secret-key': self.api_secret
+                'x-public-key': self.api_key.strip().replace('\r', '').replace('\n', ''),
+                'x-secret-key': self.api_secret.strip().replace('\r', '').replace('\n', '')
             }
             
             # Log detalhado do JSON sendo enviado (sem expor credenciais)
