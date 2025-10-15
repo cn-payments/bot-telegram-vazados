@@ -2143,23 +2143,41 @@ def generate_database_structure():
         sql_backup += "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n"
         sql_backup += "START TRANSACTION;\n"
         sql_backup += "SET time_zone = \"+00:00\";\n"
-        sql_backup += "SET FOREIGN_KEY_CHECKS = 0;\n\n"
+        sql_backup += "SET FOREIGN_KEY_CHECKS = 0;\n"
+        sql_backup += "SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n"
+        sql_backup += "SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, AUTOCOMMIT=0;\n"
+        sql_backup += "SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;\n"
+        sql_backup += "SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;\n\n"
         
         for table in tables:
             table_name = table[0]
             
             # Obter estrutura da tabela
-            cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
-            create_table = cursor.fetchone()
-            
-            if create_table:
-                sql_backup += f"-- ============================================\n"
-                sql_backup += f"-- Estrutura da tabela `{table_name}`\n"
-                sql_backup += f"-- ============================================\n"
-                sql_backup += f"DROP TABLE IF EXISTS `{table_name}`;\n"
-                sql_backup += create_table[1] + ";\n\n"
+            try:
+                cursor.execute(f"SHOW CREATE TABLE `{table_name}`")
+                create_table = cursor.fetchone()
                 
-                # Obter dados da tabela
+                if create_table:
+                    sql_backup += f"-- ============================================\n"
+                    sql_backup += f"-- Estrutura da tabela `{table_name}`\n"
+                    sql_backup += f"-- ============================================\n"
+                    sql_backup += f"DROP TABLE IF EXISTS `{table_name}`;\n"
+                    
+                    # Limpar definidores problemáticos
+                    create_sql = create_table[1]
+                    # Remover definidores problemáticos
+                    create_sql = create_sql.replace("DEFINER=`root`@`%`", "DEFINER=CURRENT_USER")
+                    create_sql = create_sql.replace("DEFINER=`root`@`localhost`", "DEFINER=CURRENT_USER")
+                    create_sql = create_sql.replace("DEFINER=`root`@`127.0.0.1`", "DEFINER=CURRENT_USER")
+                    
+                    sql_backup += create_sql + ";\n\n"
+            except Exception as e:
+                logger.warning(f"[DATABASE] Erro ao obter estrutura da tabela {table_name}: {e}")
+                sql_backup += f"-- Erro ao obter estrutura da tabela `{table_name}`: {e}\n\n"
+                continue
+            
+            # Obter dados da tabela
+            try:
                 cursor.execute(f"SELECT * FROM `{table_name}`")
                 rows = cursor.fetchall()
                 
@@ -2197,8 +2215,15 @@ def generate_database_structure():
                     sql_backup += f"UNLOCK TABLES;\n\n"
                 else:
                     sql_backup += f"-- Tabela `{table_name}` está vazia\n\n"
+            except Exception as e:
+                logger.warning(f"[DATABASE] Erro ao obter dados da tabela {table_name}: {e}")
+                sql_backup += f"-- Erro ao obter dados da tabela `{table_name}`: {e}\n\n"
         
         sql_backup += "SET FOREIGN_KEY_CHECKS = 1;\n"
+        sql_backup += "SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;\n"
+        sql_backup += "SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;\n"
+        sql_backup += "SET SQL_MODE=@OLD_SQL_MODE;\n"
+        sql_backup += "SET AUTOCOMMIT=@OLD_AUTOCOMMIT;\n"
         sql_backup += "COMMIT;\n"
         
         cursor.close()
