@@ -2223,8 +2223,53 @@ async def database_simple(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando para gerar e enviar a estrutura SQL do banco de dados"""
     logger.info("🚀 [DATABASE] Função database chamada!")
-    await update.message.reply_text("✅ Comando /database funcionando!")
-    logger.info(f"[DATABASE] Comando /database recebido do usuário {update.effective_user.id}")
+    user_id = int(update.effective_user.id)
+    logger.info(f"[DATABASE] Comando /database recebido do usuário {user_id}")
+    
+    # Verificar se é admin
+    if not is_admin(user_id):
+        logger.info(f"[DATABASE] Usuário {user_id} tentou acessar comando /database sem permissão.")
+        await update.message.reply_text("❌ Acesso negado. Apenas administradores podem usar este comando.")
+        return
+    
+    logger.info(f"[DATABASE] Usuário {user_id} autorizado para comando /database")
+    
+    try:
+        # Mostrar mensagem de processamento
+        processing_msg = await update.message.reply_text("🔄 Gerando backup completo do banco de dados...")
+        
+        # Gerar backup SQL completo
+        logger.info(f"[DATABASE] Iniciando geração do backup para usuário {user_id}")
+        sql_backup = generate_database_structure()
+        
+        if sql_backup.startswith("❌"):
+            logger.error(f"[DATABASE] Erro ao gerar backup: {sql_backup}")
+            await processing_msg.edit_text(sql_backup)
+            return
+        
+        logger.info(f"[DATABASE] Backup gerado com sucesso para usuário {user_id}")
+        
+        # Criar arquivo temporário
+        from io import BytesIO
+        sql_file = BytesIO(sql_backup.encode('utf-8'))
+        sql_file.name = f"database_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql"
+        
+        # Enviar arquivo
+        await processing_msg.delete()
+        await update.message.reply_document(
+            document=sql_file,
+            caption="💾 Backup Completo do Banco de Dados\n\n"
+                   f"📅 Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                   "📊 Inclui estrutura e todos os dados\n"
+                   "🔄 Use este arquivo para restauração completa do banco",
+            filename=sql_file.name
+        )
+        
+        logger.info(f"✅ Backup do banco enviado para admin {user_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no comando /database: {e}")
+        await update.message.reply_text(f"❌ Erro ao gerar backup do banco: {str(e)}")
 
 async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("[DEBUG] Entrou em handle_admin_callback")
