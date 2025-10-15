@@ -849,7 +849,20 @@ def load_config():
             elif config_type == 'integer':
                 config[key] = int(value)
             elif config_type == 'json':
-                config[key] = json.loads(value)
+                try:
+                    # Limpar caracteres de controle inválidos
+                    clean_value = ''.join(char for char in value if ord(char) >= 32 or char in '\t\n\r')
+                    config[key] = json.loads(clean_value)
+                except json.JSONDecodeError as json_error:
+                    logger.warning(f"Erro ao fazer parse JSON para {key}: {json_error}")
+                    # Tentar limpar mais caracteres problemáticos
+                    try:
+                        # Remover caracteres de controle mais agressivamente
+                        clean_value = ''.join(char for char in value if ord(char) >= 32)
+                        config[key] = json.loads(clean_value)
+                    except:
+                        logger.error(f"Não foi possível fazer parse JSON para {key}, usando valor como string")
+                        config[key] = value
             else:
                 config[key] = value
         return config
