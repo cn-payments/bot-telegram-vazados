@@ -2180,18 +2180,34 @@ def generate_database_structure():
                         if col_default and col_default != "NULL":
                             if col_default.upper() in ["CURRENT_TIMESTAMP", "NOW()"]:
                                 col_def += f" DEFAULT {col_default}"
+                            elif "DEFAULT_GENERATED" in col_default:
+                                # Remover DEFAULT_GENERATED que causa erro de sintaxe
+                                col_def += " DEFAULT CURRENT_TIMESTAMP"
                             else:
                                 col_def += f" DEFAULT '{col_default}'"
                         
                         if col_extra:
-                            col_def += f" {col_extra}"
+                            # Limpar extras problemáticos
+                            if "DEFAULT_GENERATED" in col_extra:
+                                col_extra = col_extra.replace("DEFAULT_GENERATED", "").strip()
+                            if col_extra and col_extra != "":
+                                col_def += f" {col_extra}"
                         
                         column_definitions.append(col_def)
                         
                         if col_key == "PRI":
                             primary_keys.append(f"`{col_name}`")
                     
-                    sql_backup += ",\n".join(column_definitions)
+                    # Limpar definições problemáticas
+                    clean_definitions = []
+                    for col_def in column_definitions:
+                        # Remover DEFAULT_GENERATED de qualquer lugar
+                        clean_def = col_def.replace("DEFAULT_GENERATED", "").strip()
+                        # Remover espaços duplos
+                        clean_def = " ".join(clean_def.split())
+                        clean_definitions.append(clean_def)
+                    
+                    sql_backup += ",\n".join(clean_definitions)
                     
                     if primary_keys:
                         sql_backup += f",\n  PRIMARY KEY ({', '.join(primary_keys)})"
