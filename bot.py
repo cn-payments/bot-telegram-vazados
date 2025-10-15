@@ -6943,7 +6943,7 @@ def get_pix_provider_manager():
 
 def start_cnpay_webhook():
     from webhook_cnpay import app as webhook_app
-    webhook_app.run(host='0.0.0.0', port=8082, debug=False, use_reloader=False)
+    webhook_app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
 
 async def get_user_vip_links(bot, user_id):
     """Busca links de convite VIP para um usuário com assinatura ativa"""
