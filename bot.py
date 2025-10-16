@@ -769,11 +769,30 @@ def load_messages_from_db():
     try:
         db.connect()
         if not db.connection:
+            logger.error("Não foi possível conectar ao banco de dados para carregar mensagens")
             return {}
         rows = db.execute_fetch_all(
             "SELECT message_key, message_value FROM bot_messages WHERE language = 'pt-BR'"
         )
-        messages = {row['message_key']: row['message_value'] for row in rows}
+        
+        if not rows:
+            logger.warning("Nenhuma mensagem encontrada no banco de dados")
+            return {}
+            
+        messages = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                logger.error(f"Row de mensagem não é um dicionário: {type(row)}, valor: {row}")
+                continue
+                
+            key = row.get('message_key')
+            value = row.get('message_value')
+            
+            if key and value is not None:
+                messages[key] = value
+            else:
+                logger.warning(f"Chave ou valor de mensagem inválido: {row}")
+                
         return messages
     except Exception as e:
         logger.error(f"Erro ao carregar mensagens do banco: {e}")
@@ -838,16 +857,33 @@ def load_config():
         # Usar o novo método que fecha o cursor automaticamente
         rows = db.execute_fetch_all("SELECT config_key, config_value, config_type FROM bot_config")
         
+        if not rows:
+            logger.warning("Nenhuma configuração encontrada no banco de dados")
+            return {}
+        
         config = {}
         for row in rows:
-            key = row['config_key']
-            value = row['config_value']
-            config_type = row['config_type']
+            if not isinstance(row, dict):
+                logger.error(f"Row não é um dicionário: {type(row)}, valor: {row}")
+                continue
+                
+            key = row.get('config_key')
+            value = row.get('config_value')
+            config_type = row.get('config_type')
+            
+            if not key:
+                logger.warning(f"Chave de configuração vazia: {row}")
+                continue
+                
             # Conversão de tipo
             if config_type == 'boolean':
                 config[key] = value.lower() == 'true'
             elif config_type == 'integer':
-                config[key] = int(value)
+                try:
+                    config[key] = int(value)
+                except (ValueError, TypeError):
+                    logger.warning(f"Erro ao converter {key} para inteiro: {value}")
+                    config[key] = value
             elif config_type == 'json':
                 try:
                     # Limpar caracteres de controle inválidos
@@ -1392,11 +1428,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = load_messages_from_db()
     
     # Verificar se messages foi carregado corretamente
-    if not messages:
+    if not messages or not isinstance(messages, dict):
         logger.error("Falha ao carregar mensagens do banco de dados na função start")
         messages = {}  # Usar dicionário vazio como fallback
     
-    if not config:
+    # Verificar se config foi carregado corretamente e é um dicionário
+    if not config or not isinstance(config, dict):
+        logger.error(f"Falha ao carregar configurações na função start. Tipo: {type(config)}, Valor: {config}")
         await update.message.reply_text("Erro ao carregar configurações. Tente novamente mais tarde.")
         return
     
