@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, JobQueue
@@ -896,9 +897,23 @@ def load_config():
                         # Remover caracteres de controle mais agressivamente
                         clean_value = ''.join(char for char in value if ord(char) >= 32)
                         config[key] = json.loads(clean_value)
-                    except:
-                        logger.error(f"Não foi possível fazer parse JSON para {key}, usando valor como string")
-                        config[key] = value
+                    except json.JSONDecodeError as second_error:
+                        logger.warning(f"Segunda tentativa de parse JSON falhou para {key}: {second_error}")
+                        # Tentar uma limpeza mais agressiva removendo caracteres problemáticos
+                        try:
+                            # Remover caracteres de controle e caracteres problemáticos
+                            clean_value = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
+                            config[key] = json.loads(clean_value)
+                        except:
+                            logger.error(f"Não foi possível fazer parse JSON para {key}, usando estrutura padrão")
+                            # Para configurações JSON que falharam, usar estrutura padrão baseada na chave
+                            if key == 'welcome_file':
+                                config[key] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
+                            elif key == 'admin_settings':
+                                config[key] = {'maintenance_mode': False}
+                            else:
+                                # Para outras configurações JSON, usar dicionário vazio
+                                config[key] = {}
             else:
                 config[key] = value
         return config
