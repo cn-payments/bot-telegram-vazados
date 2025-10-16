@@ -20,9 +20,10 @@ app = Flask(__name__)
 processed_events = {}  # {transaction_id: set(event_types)}
 transaction_lock = threading.Lock()
 
-@app.route('/webhook/cnpay', methods=['POST'])
+@app.route('/webhook/cnpay', methods=['GET', 'POST'])
 def cnpay_webhook():
     """Webhook para receber callbacks do CNPay"""
+    logger.info(f"🔍 Método recebido: {request.method}")
     try:
         data = request.get_json(silent=True)
 
