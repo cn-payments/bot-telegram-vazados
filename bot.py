@@ -901,12 +901,19 @@ def load_config():
                                 # Terceira tentativa: regex para remover caracteres problemáticos
                                 clean_value = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
                             
-                            config[key] = json.loads(clean_value)
+                            parsed_json = json.loads(clean_value)
+                            # Verificar se o resultado é um dicionário
+                            if isinstance(parsed_json, dict):
+                                config[key] = parsed_json
+                            else:
+                                logger.warning(f"JSON parseado para {key} não é um dicionário: {type(parsed_json)}")
+                                raise json.JSONDecodeError("Not a dictionary", clean_value, 0)
                             json_parsed = True
                             break
                         except json.JSONDecodeError as json_error:
                             if attempt == 2:  # Última tentativa
                                 logger.error(f"Não foi possível fazer parse JSON para {key} após 3 tentativas: {json_error}")
+                                logger.error(f"Valor problemático (primeiros 200 chars): {repr(value[:200])}")
                                 # Usar estrutura padrão baseada na chave
                                 if key == 'welcome_file':
                                     config[key] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
@@ -926,6 +933,15 @@ def load_config():
                 logger.error(f"Erro ao processar linha de configuração: {row_error}")
                 continue
                 
+        # Garantir que todas as configurações JSON são dicionários
+        for key, value in config.items():
+            if key in ['welcome_file', 'admin_settings'] and not isinstance(value, dict):
+                logger.warning(f"Configuração {key} não é um dicionário, corrigindo...")
+                if key == 'welcome_file':
+                    config[key] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
+                elif key == 'admin_settings':
+                    config[key] = {'maintenance_mode': False}
+        
         return config
     except RecursionError as rec_error:
         logger.error(f"Erro de recursão ao carregar configuração: {rec_error}")
@@ -5485,7 +5501,7 @@ async def handle_admin_files(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="admin_welcome_file")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                current_caption = config['welcome_file'].get('caption', welcome_caption)
+                current_caption = config.get('welcome_file', {}).get('caption', welcome_caption)
                 
                 await update.message.reply_text(
                     f"✅ Arquivo de boas-vindas configurado com sucesso!\n\n"
@@ -5711,7 +5727,12 @@ async def handle_welcome_file_toggle(update: Update, context: ContextTypes.DEFAU
         }
     
     # Alternar status do arquivo de boas-vindas
-    current_status = config['welcome_file'].get('enabled', False)
+    current_status = config.get('welcome_file', {}).get('enabled', False)
+    
+    # Garantir que welcome_file é um dicionário
+    if not isinstance(config.get('welcome_file'), dict):
+        config['welcome_file'] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
+    
     config['welcome_file']['enabled'] = not current_status
     new_status = config['welcome_file']['enabled']
     message = load_messages_from_db()
