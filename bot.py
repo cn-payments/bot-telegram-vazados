@@ -22,7 +22,6 @@ import queue
 import tempfile
 import shutil
 from flask import Flask, jsonify
-import re
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill
@@ -848,6 +847,7 @@ def save_message_to_db(message_key, message_value):
 
 # Carregar configurações
 def load_config():
+    """Carrega configurações do banco de dados com proteção contra recursão"""
     db = Database()
     try:
         db.connect()
@@ -864,64 +864,80 @@ def load_config():
         
         config = {}
         for row in rows:
-            if not isinstance(row, dict):
-                logger.error(f"Row não é um dicionário: {type(row)}, valor: {row}")
-                continue
+            try:
+                if not isinstance(row, dict):
+                    logger.error(f"Row não é um dicionário: {type(row)}, valor: {row}")
+                    continue
+                    
+                key = row.get('config_key')
+                value = row.get('config_value')
+                config_type = row.get('config_type')
                 
-            key = row.get('config_key')
-            value = row.get('config_value')
-            config_type = row.get('config_type')
-            
-            if not key:
-                logger.warning(f"Chave de configuração vazia: {row}")
-                continue
-                
-            # Conversão de tipo
-            if config_type == 'boolean':
-                config[key] = value.lower() == 'true'
-            elif config_type == 'integer':
-                try:
-                    config[key] = int(value)
-                except (ValueError, TypeError):
-                    logger.warning(f"Erro ao converter {key} para inteiro: {value}")
-                    config[key] = value
-            elif config_type == 'json':
-                try:
-                    # Limpar caracteres de controle inválidos
-                    clean_value = ''.join(char for char in value if ord(char) >= 32 or char in '\t\n\r')
-                    config[key] = json.loads(clean_value)
-                except json.JSONDecodeError as json_error:
-                    logger.warning(f"Erro ao fazer parse JSON para {key}: {json_error}")
-                    # Tentar limpar mais caracteres problemáticos
+                if not key:
+                    logger.warning(f"Chave de configuração vazia: {row}")
+                    continue
+                    
+                # Conversão de tipo
+                if config_type == 'boolean':
+                    config[key] = value.lower() == 'true'
+                elif config_type == 'integer':
                     try:
-                        # Remover caracteres de controle mais agressivamente
-                        clean_value = ''.join(char for char in value if ord(char) >= 32)
-                        config[key] = json.loads(clean_value)
-                    except json.JSONDecodeError as second_error:
-                        logger.warning(f"Segunda tentativa de parse JSON falhou para {key}: {second_error}")
-                        # Tentar uma limpeza mais agressiva removendo caracteres problemáticos
+                        config[key] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Erro ao converter {key} para inteiro: {value}")
+                        config[key] = value
+                elif config_type == 'json':
+                    # Tentar parse JSON com múltiplas estratégias
+                    json_parsed = False
+                    for attempt in range(3):  # Máximo 3 tentativas
                         try:
-                            # Remover caracteres de controle e caracteres problemáticos
-                            clean_value = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
-                            config[key] = json.loads(clean_value)
-                        except:
-                            logger.error(f"Não foi possível fazer parse JSON para {key}, usando estrutura padrão")
-                            # Para configurações JSON que falharam, usar estrutura padrão baseada na chave
-                            if key == 'welcome_file':
-                                config[key] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
-                            elif key == 'admin_settings':
-                                config[key] = {'maintenance_mode': False}
+                            if attempt == 0:
+                                # Primeira tentativa: limpeza básica
+                                clean_value = ''.join(char for char in value if ord(char) >= 32 or char in '\t\n\r')
+                            elif attempt == 1:
+                                # Segunda tentativa: limpeza mais agressiva
+                                clean_value = ''.join(char for char in value if ord(char) >= 32)
                             else:
-                                # Para outras configurações JSON, usar dicionário vazio
-                                config[key] = {}
-            else:
-                config[key] = value
+                                # Terceira tentativa: regex para remover caracteres problemáticos
+                                clean_value = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', value)
+                            
+                            config[key] = json.loads(clean_value)
+                            json_parsed = True
+                            break
+                        except json.JSONDecodeError as json_error:
+                            if attempt == 2:  # Última tentativa
+                                logger.error(f"Não foi possível fazer parse JSON para {key} após 3 tentativas: {json_error}")
+                                # Usar estrutura padrão baseada na chave
+                                if key == 'welcome_file':
+                                    config[key] = {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
+                                elif key == 'admin_settings':
+                                    config[key] = {'maintenance_mode': False}
+                                else:
+                                    config[key] = {}
+                            else:
+                                logger.warning(f"Tentativa {attempt + 1} de parse JSON falhou para {key}: {json_error}")
+                    
+                    if not json_parsed and key not in config:
+                        # Fallback final
+                        config[key] = {}
+                else:
+                    config[key] = value
+            except Exception as row_error:
+                logger.error(f"Erro ao processar linha de configuração: {row_error}")
+                continue
+                
         return config
+    except RecursionError as rec_error:
+        logger.error(f"Erro de recursão ao carregar configuração: {rec_error}")
+        return {}
     except Exception as e:
         logger.error(f"Erro ao carregar configuração: {e}")
         return None
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception as close_error:
+            logger.error(f"Erro ao fechar conexão: {close_error}")
 
 def save_config(config):
     db = Database()
@@ -6304,14 +6320,26 @@ def main():
         finally:
             db.close()
 
-        # Carregar configurações
-        config = load_config()
-        if config is None:
-            logger.error("Falha ao carregar as configurações.")
-            return  # ou lidar de forma apropriada
-        if not config or 'bot_token' not in config:
-            logger.error("Token do bot não encontrado na configuração.")
-            return
+        # Carregar configurações com proteção contra recursão
+        try:
+            config = load_config()
+            if config is None:
+                logger.error("Falha ao carregar as configurações.")
+                return
+            if not config or 'bot_token' not in config:
+                logger.error("Token do bot não encontrado na configuração.")
+                return
+        except RecursionError as rec_error:
+            logger.error(f"Erro de recursão ao carregar configurações: {rec_error}")
+            logger.error("Usando configurações padrão para evitar recursão")
+            config = {
+                'bot_token': os.getenv('BOT_TOKEN', ''),
+                'admin_settings': {'maintenance_mode': False},
+                'welcome_file': {'enabled': False, 'file_id': None, 'file_type': 'photo', 'caption': ''}
+            }
+            if not config.get('bot_token'):
+                logger.error("Token do bot não encontrado nas variáveis de ambiente")
+                return
 
         # Inicializar o bot
         application = Application.builder().token(config['bot_token']).build()
